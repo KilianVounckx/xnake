@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 const INPUT_QUEUE_CAP: usize = 3;
-const TICK_RATE: f32 = 0.3;
+const TICK_RATE: f32 = 0.2;
 const NUM_ROWS: usize = 20;
 const NUM_COLS: usize = 20;
 
