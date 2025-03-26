@@ -1,4 +1,6 @@
-use macroquad::prelude::*;
+use std::collections::HashMap;
+
+use macroquad::{input::TouchPhase, prelude::*};
 
 const INPUT_QUEUE_CAP: usize = 3;
 const TICK_RATE: f32 = 0.2;
@@ -8,13 +10,44 @@ const NUM_COLS: usize = 20;
 #[macroquad::main("Xnake")]
 async fn main() {
     rand::srand(miniquad::date::now() as u64);
+
+    let mut touches_cache = HashMap::new();
     let mut snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
     let mut time = 0.0;
     let mut food = Food {
         typ: FoodType::Grow,
         position: snake.random_food_location(),
     };
+
     loop {
+        for touch in touches() {
+            match touch.phase {
+                TouchPhase::Started => {
+                    touches_cache.insert(touch.id, (touch.position, false));
+                }
+                TouchPhase::Moved => {
+                    assert!(touches_cache.contains_key(&touch.id));
+                    let (position, _) = touches_cache[&touch.id];
+                    touches_cache.insert(touch.id, (position, true));
+                }
+                TouchPhase::Ended => {
+                    assert!(touches_cache.contains_key(&touch.id));
+                    let (position, has_moved) = touches_cache[&touch.id];
+                    if !has_moved {
+                        continue;
+                    }
+                    let dir = touch.position - position;
+                    let dir = if dir.x.abs() >= dir.y.abs() {
+                        ivec2(dir.x.signum() as i32, 0)
+                    } else {
+                        ivec2(0, dir.y.signum() as i32)
+                    };
+                    snake.queue_input(dir);
+                }
+                TouchPhase::Cancelled | TouchPhase::Stationary => {}
+            }
+        }
+
         if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
             snake.queue_input(IVec2::NEG_X);
         }
