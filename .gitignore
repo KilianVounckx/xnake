@@ -1,6 +1,8 @@
 *
 !*/
 !.gitignore
+!/.github
+!/.github/**/*
 
 !/Cargo.toml
 !/Cargo.lock
