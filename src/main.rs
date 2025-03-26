@@ -120,8 +120,9 @@ impl Snake {
             self.dir = self.input_queue.remove(0);
         }
 
-        for i in (1..self.segments.len()).rev() {
-            self.segments[i] = self.segments[i - 1];
+        {
+            let len = self.segments.len();
+            self.segments.copy_within(0..len - 1, 1);
         }
         self.segments[0] += self.dir;
     }
