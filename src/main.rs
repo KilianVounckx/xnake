@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 
+const INPUT_QUEUE_CAP: usize = 3;
 const TICK_RATE: f32 = 0.3;
 const NUM_ROWS: usize = 20;
 const NUM_COLS: usize = 20;
@@ -9,11 +10,23 @@ async fn main() {
     let mut snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
     let mut time = 0.0;
     loop {
+        if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
+            snake.queue_input(IVec2::NEG_X);
+        }
+        if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
+            snake.queue_input(IVec2::X);
+        }
+        if is_key_pressed(KeyCode::W) || is_key_pressed(KeyCode::Up) {
+            snake.queue_input(IVec2::NEG_Y);
+        }
+        if is_key_pressed(KeyCode::S) || is_key_pressed(KeyCode::Down) {
+            snake.queue_input(IVec2::Y);
+        }
+
         time += get_frame_time();
         while time > TICK_RATE {
             time -= TICK_RATE;
             snake.update();
-            println!("{snake:?}");
         }
 
         clear_background(BLACK);
@@ -40,6 +53,7 @@ struct Grid {
 struct Snake {
     segments: Vec<IVec2>,
     dir: IVec2,
+    input_queue: Vec<IVec2>,
 }
 
 impl Grid {
@@ -84,10 +98,28 @@ impl Grid {
 impl Snake {
     fn new(pos: IVec2, dir: IVec2, size: i32) -> Self {
         let segments = (0..size).map(|i| pos - i * dir).collect();
-        Self { segments, dir }
+        Self {
+            segments,
+            dir,
+            input_queue: vec![],
+        }
+    }
+
+    fn queue_input(&mut self, dir: IVec2) {
+        if self.input_queue.len() < INPUT_QUEUE_CAP && -self.last_input() != dir {
+            self.input_queue.push(dir);
+        }
+    }
+
+    fn last_input(&self) -> IVec2 {
+        self.input_queue.last().copied().unwrap_or(self.dir)
     }
 
     fn update(&mut self) {
+        if !self.input_queue.is_empty() {
+            self.dir = self.input_queue.remove(0);
+        }
+
         for i in (1..self.segments.len()).rev() {
             self.segments[i] = self.segments[i - 1];
         }
