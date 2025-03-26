@@ -133,5 +133,17 @@ impl Snake {
             draw_rectangle(x, y, grid.w, grid.h, GREEN);
             draw_rectangle_lines(x, y, grid.w, grid.h, 2.0, DARKGREEN);
         }
+        draw_circle(
+            grid.left
+                + self.segments[0].x as f32 * grid.w
+                + grid.w / 2.0
+                + self.dir.x as f32 * grid.w / 4.0,
+            grid.top
+                + self.segments[0].y as f32 * grid.h
+                + grid.h / 2.0
+                + self.dir.y as f32 * grid.w / 4.0,
+            grid.w.min(grid.h) / 8.0,
+            DARKGREEN,
+        );
     }
 }
