@@ -7,8 +7,13 @@ const NUM_COLS: usize = 20;
 
 #[macroquad::main("Xnake")]
 async fn main() {
+    rand::srand(miniquad::date::now() as u64);
     let mut snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
     let mut time = 0.0;
+    let mut food = Food {
+        typ: FoodType::Grow,
+        position: snake.random_food_location(),
+    };
     loop {
         if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
             snake.queue_input(IVec2::NEG_X);
@@ -29,10 +34,21 @@ async fn main() {
             snake.update();
         }
 
+        if snake.eats(food.position) {
+            match food.typ {
+                FoodType::Grow => snake.grow(),
+            }
+            food = Food {
+                typ: FoodType::Grow,
+                position: snake.random_food_location(),
+            };
+        }
+
         clear_background(BLACK);
 
         let grid = Grid::calculate();
         grid.draw();
+        food.draw(&grid);
         snake.draw(&grid);
 
         next_frame().await;
@@ -54,6 +70,17 @@ struct Snake {
     segments: Vec<IVec2>,
     dir: IVec2,
     input_queue: Vec<IVec2>,
+}
+
+#[derive(Debug)]
+struct Food {
+    typ: FoodType,
+    position: IVec2,
+}
+
+#[derive(Debug)]
+enum FoodType {
+    Grow,
 }
 
 impl Grid {
@@ -115,6 +142,32 @@ impl Snake {
         self.input_queue.last().copied().unwrap_or(self.dir)
     }
 
+    fn random_food_location(&self) -> IVec2 {
+        let mut free_positions = (0..NUM_COLS)
+            .flat_map(|x| (0..NUM_ROWS).map(move |y| ivec2(x as i32, y as i32)))
+            .filter(|v| !self.segments.contains(v));
+        let num_free_positions = free_positions.clone().count();
+        let index = rand::gen_range(0, num_free_positions);
+        free_positions.nth(index).unwrap()
+    }
+
+    fn head(&self) -> IVec2 {
+        self.segments[0]
+    }
+
+    fn head_mut(&mut self) -> &mut IVec2 {
+        &mut self.segments[0]
+    }
+
+    fn eats(&self, food: IVec2) -> bool {
+        self.head() == food
+    }
+
+    fn grow(&mut self) {
+        let last = *self.segments.last().unwrap();
+        self.segments.push(last);
+    }
+
     fn update(&mut self) {
         if !self.input_queue.is_empty() {
             self.dir = self.input_queue.remove(0);
@@ -124,7 +177,8 @@ impl Snake {
             let len = self.segments.len();
             self.segments.copy_within(0..len - 1, 1);
         }
-        self.segments[0] += self.dir;
+        let dir = self.dir;
+        *self.head_mut() += dir;
     }
 
     fn draw(&self, grid: &Grid) {
@@ -136,15 +190,27 @@ impl Snake {
         }
         draw_circle(
             grid.left
-                + self.segments[0].x as f32 * grid.w
+                + self.head().x as f32 * grid.w
                 + grid.w / 2.0
                 + self.dir.x as f32 * grid.w / 4.0,
             grid.top
-                + self.segments[0].y as f32 * grid.h
+                + self.head().y as f32 * grid.h
                 + grid.h / 2.0
                 + self.dir.y as f32 * grid.w / 4.0,
             grid.w.min(grid.h) / 8.0,
             DARKGREEN,
         );
+    }
+}
+
+impl Food {
+    fn draw(&self, grid: &Grid) {
+        let (color, border_color) = match self.typ {
+            FoodType::Grow => (RED, RED),
+        };
+        let x = grid.left + self.position.x as f32 * grid.w;
+        let y = grid.top + self.position.y as f32 * grid.h;
+        draw_rectangle(x, y, grid.w, grid.h, color);
+        draw_rectangle_lines(x, y, grid.w, grid.h, 2.0, border_color);
     }
 }
