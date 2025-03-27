@@ -43,8 +43,12 @@ async fn main() {
                         ivec2(0, dir.y.signum() as i32)
                     };
                     snake.queue_input(dir);
+                    touches_cache.remove(&touch.id);
                 }
-                TouchPhase::Cancelled | TouchPhase::Stationary => {}
+                TouchPhase::Cancelled => {
+                    touches_cache.remove(&touch.id);
+                }
+                TouchPhase::Stationary => {}
             }
         }
 
