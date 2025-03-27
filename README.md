@@ -18,5 +18,7 @@ other food has a temporary en will despawn if not eaten in time:
 |--------|--------|--------|
 | red | green | eating food will spawn two more |
 | dark gray | gray | the snake's length is halved |
+| green | dark green | the snake's speed is halved |
+| gold | white | the snake's speed is doubled |
 | white | light gray | the snake can pass through itself |
 | dark blue | gold | the snake can wrap around the grid |

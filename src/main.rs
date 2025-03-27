@@ -6,7 +6,7 @@ use num_traits::{Bounded, FromPrimitive, ToPrimitive};
 use rand::{ChooseRandom, RandomRange};
 
 const INPUT_QUEUE_CAP: usize = 3;
-const TICK_RATE: f32 = 0.2;
+const INIT_TICK_RATE: f32 = 0.2;
 const NUM_ROWS: usize = 20;
 const NUM_COLS: usize = 20;
 const MAX_FOODS: usize = 10;
@@ -14,6 +14,7 @@ const FOOD_DESPAWN_TIME: f32 = 7.0;
 const PORTAL_TIME: f32 = 7.0;
 const INVISIBLE_TIME: f32 = 7.0;
 const DOUBLE_FOOD_TIME: f32 = 4.0;
+const SPEED_CHANGE_TIME: f32 = 3.0;
 
 #[macroquad::main("Xnake")]
 async fn main() {
@@ -31,10 +32,12 @@ async fn main() {
 struct Game {
     time: f32,
     score: u32,
+    tick_rate: f32,
     snake: Snake,
     foods: HashMap<Food, f32>,
     touches_cache: HashMap<u64, (Vec2, bool)>,
     double_food_time_left: f32,
+    speed_change_time_left: f32,
 }
 
 #[derive(Debug)]
@@ -72,6 +75,8 @@ enum FoodType {
     Grow,
     DoubleFood,
     Cut,
+    Slow,
+    Fast,
     Invisible,
     Portal,
 }
@@ -91,14 +96,18 @@ impl Game {
         ))
         .collect();
         let score = 0;
+        let tick_rate = INIT_TICK_RATE;
+        let speed_change_time_left = 0.0;
 
         Self {
             time,
             score,
+            tick_rate,
             snake,
             foods,
             touches_cache,
             double_food_time_left,
+            speed_change_time_left,
         }
     }
 
@@ -106,10 +115,12 @@ impl Game {
         let Self {
             mut time,
             mut score,
+            mut tick_rate,
             mut snake,
             mut foods,
             mut touches_cache,
             mut double_food_time_left,
+            mut speed_change_time_left,
         } = self;
         for touch in touches() {
             match touch.phase {
@@ -163,14 +174,19 @@ impl Game {
         if double_food_time_left < 0.0 {
             double_food_time_left = 0.0;
         }
+        speed_change_time_left -= delta;
+        if speed_change_time_left < 0.0 {
+            speed_change_time_left = 0.0;
+            tick_rate = INIT_TICK_RATE;
+        }
 
-        while time > TICK_RATE {
-            time -= TICK_RATE;
-            snake.update();
+        while time > tick_rate {
+            time -= tick_rate;
+            snake.update(tick_rate);
 
             let mut to_remove = vec![];
             for (food, food_time) in foods.iter_mut() {
-                *food_time -= TICK_RATE;
+                *food_time -= tick_rate;
                 if *food_time < 0.0 && food.typ != FoodType::Grow {
                     to_remove.push(*food);
                 }
@@ -193,6 +209,14 @@ impl Game {
                     FoodType::Grow => {}
                     FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
                     FoodType::Cut => snake.cut(),
+                    FoodType::Slow => {
+                        speed_change_time_left = SPEED_CHANGE_TIME;
+                        tick_rate /= 2.0;
+                    }
+                    FoodType::Fast => {
+                        speed_change_time_left = SPEED_CHANGE_TIME;
+                        tick_rate *= 2.0;
+                    }
                     FoodType::Invisible => snake.invisible(),
                     FoodType::Portal => snake.portal(),
                 }
@@ -234,10 +258,12 @@ impl Game {
         Self {
             time,
             score,
+            tick_rate,
             snake,
             foods,
             touches_cache,
             double_food_time_left,
+            speed_change_time_left,
         }
     }
 
@@ -428,16 +454,16 @@ impl Snake {
             || self.head().y >= NUM_ROWS as i32
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, delta: f32) {
         if !self.input_queue.is_empty() {
             self.dir = self.input_queue.remove(0);
         }
 
-        self.portal_time_left -= TICK_RATE;
+        self.portal_time_left -= delta;
         if self.portal_time_left < 0.0 {
             self.portal_time_left = 0.0;
         }
-        self.invisible_time_left -= TICK_RATE;
+        self.invisible_time_left -= delta;
         if self.invisible_time_left < 0.0 {
             self.invisible_time_left = 0.0;
         }
@@ -486,6 +512,8 @@ impl Food {
             FoodType::Grow => (RED, RED),
             FoodType::DoubleFood => (RED, GREEN),
             FoodType::Cut => (DARKGRAY, GRAY),
+            FoodType::Slow => (GREEN, DARKGREEN),
+            FoodType::Fast => (GOLD, WHITE),
             FoodType::Invisible => (WHITE, LIGHTGRAY),
             FoodType::Portal => (DARKBLUE, GOLD),
         };
@@ -502,6 +530,8 @@ impl FoodType {
             FoodType::Grow => 100,
             FoodType::DoubleFood => 200,
             FoodType::Cut => 500,
+            FoodType::Slow => 200,
+            FoodType::Fast => 500,
             FoodType::Invisible => 200,
             FoodType::Portal => 200,
         }
