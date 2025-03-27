@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    iter,
-};
+use std::{collections::HashMap, iter};
 
 use macroquad::{input::TouchPhase, prelude::*};
 use num_derive::{FromPrimitive, ToPrimitive};
@@ -13,6 +10,7 @@ const TICK_RATE: f32 = 0.2;
 const NUM_ROWS: usize = 20;
 const NUM_COLS: usize = 20;
 const MAX_FOODS: usize = 10;
+const FOOD_DESPAWN_TIME: f32 = 7.0;
 const PORTAL_TIME: f32 = 7.0;
 const INVISIBLE_TIME: f32 = 7.0;
 const DOUBLE_FOOD_TIME: f32 = 4.0;
@@ -33,7 +31,7 @@ async fn main() {
 struct Game {
     time: f32,
     snake: Snake,
-    foods: HashSet<Food>,
+    foods: HashMap<Food, f32>,
     touches_cache: HashMap<u64, (Vec2, bool)>,
     double_food_time_left: f32,
 }
@@ -80,10 +78,13 @@ impl Game {
         let snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
         let time = 0.0;
         let double_food_time_left = 0.0;
-        let foods = iter::once(Food {
-            typ: FoodType::Grow,
-            position: snake.random_food_location(iter::empty()),
-        })
+        let foods = iter::once((
+            Food {
+                typ: FoodType::Grow,
+                position: snake.random_food_location(iter::empty()),
+            },
+            0.0,
+        ))
         .collect();
 
         Self {
@@ -161,8 +162,15 @@ impl Game {
             snake.update();
 
             let mut to_remove = vec![];
-            let mut new_foods = 0;
-            for food in foods.iter().copied() {
+            for (food, food_time) in foods.iter_mut() {
+                *food_time -= TICK_RATE;
+                if *food_time < 0.0 && food.typ != FoodType::Grow {
+                    to_remove.push(*food);
+                }
+            }
+
+            let mut num_new_foods = 0;
+            for food in foods.keys().copied() {
                 if !snake.eats(food.position) {
                     continue;
                 }
@@ -176,18 +184,23 @@ impl Game {
                     FoodType::Portal => snake.portal(),
                 }
 
-                new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
+                num_new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
             }
             for food in to_remove {
                 foods.remove(&food);
             }
-            for _ in 0..new_foods {
+            for _ in 0..num_new_foods {
                 if foods.len() >= MAX_FOODS {
                     break;
                 }
-                let position = snake.random_food_location(foods.iter().map(|food| food.position));
+                let position = snake.random_food_location(foods.keys().map(|food| food.position));
                 let typ = rand::gen_range(FoodType::min_value(), FoodType::max_value());
-                foods.insert(Food { typ, position });
+                foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
+            }
+            if foods.is_empty() {
+                let position = snake.random_food_location(foods.keys().map(|food| food.position));
+                let typ = FoodType::Grow;
+                foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
             }
 
             if !snake.can_portal() && snake.is_outside() {
@@ -212,7 +225,7 @@ impl Game {
         clear_background(BLACK);
         let grid = Grid::calculate();
         grid.draw();
-        for food in &self.foods {
+        for food in self.foods.keys() {
             food.draw(&grid);
         }
         self.snake.draw(&grid);
