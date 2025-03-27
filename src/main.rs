@@ -465,6 +465,11 @@ impl Snake {
         if self.invisible_time_left < 0.0 {
             self.invisible_time_left = 0.0;
         }
+        self.speed_change_time_left -= delta;
+        if self.speed_change_time_left < 0.0 {
+            self.speed_change_time_left = 0.0;
+            self.tick_rate = INIT_TICK_RATE;
+        }
 
         while self.time > self.tick_rate {
             self.time -= self.tick_rate;
