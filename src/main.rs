@@ -396,6 +396,10 @@ impl Snake {
         if self.portal_time_left < 0.0 {
             self.portal_time_left = 0.0;
         }
+        self.invisible_time_left -= TICK_RATE;
+        if self.invisible_time_left < 0.0 {
+            self.invisible_time_left = 0.0;
+        }
 
         {
             let len = self.segments.len();
