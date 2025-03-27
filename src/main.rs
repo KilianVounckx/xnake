@@ -68,6 +68,7 @@ enum FoodType {
     #[default]
     Grow,
     DoubleFood,
+    Cut,
     Invisible,
     Portal,
 }
@@ -180,6 +181,7 @@ impl Game {
                 match food.typ {
                     FoodType::Grow => {}
                     FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
+                    FoodType::Cut => snake.cut(),
                     FoodType::Invisible => snake.invisible(),
                     FoodType::Portal => snake.portal(),
                 }
@@ -364,6 +366,12 @@ impl Snake {
         self.segments.push(last);
     }
 
+    fn cut(&mut self) {
+        let len = self.segments.len();
+        let new_len = if len % 2 == 0 { len / 2 } else { len / 2 + 1 };
+        self.segments.truncate(new_len);
+    }
+
     fn portal(&mut self) {
         self.portal_time_left = PORTAL_TIME;
     }
@@ -444,6 +452,7 @@ impl Food {
         let (color, border_color) = match self.typ {
             FoodType::Grow => (RED, RED),
             FoodType::DoubleFood => (RED, GREEN),
+            FoodType::Cut => (DARKGRAY, GRAY),
             FoodType::Invisible => (WHITE, LIGHTGRAY),
             FoodType::Portal => (DARKBLUE, GOLD),
         };
