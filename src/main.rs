@@ -30,14 +30,11 @@ async fn main() {
 
 #[derive(Debug)]
 struct Game {
-    time: f32,
     score: u32,
-    tick_rate: f32,
     snake: Snake,
     foods: HashMap<Food, f32>,
     touches_cache: HashMap<u64, (Vec2, bool)>,
     double_food_time_left: f32,
-    speed_change_time_left: f32,
 }
 
 #[derive(Debug)]
@@ -54,11 +51,14 @@ struct Grid {
 
 #[derive(Debug)]
 struct Snake {
+    time: f32,
+    tick_rate: f32,
     segments: Vec<IVec2>,
     dir: IVec2,
     input_queue: Vec<IVec2>,
     portal_time_left: f32,
     invisible_time_left: f32,
+    speed_change_time_left: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -86,7 +86,6 @@ impl Game {
     fn new() -> Self {
         let touches_cache = HashMap::new();
         let snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
-        let time = 0.0;
         let double_food_time_left = 0.0;
         let foods = iter::once((
             Food {
@@ -97,31 +96,23 @@ impl Game {
         ))
         .collect();
         let score = 0;
-        let tick_rate = INIT_TICK_RATE;
-        let speed_change_time_left = 0.0;
 
         Self {
-            time,
             score,
-            tick_rate,
             snake,
             foods,
             touches_cache,
             double_food_time_left,
-            speed_change_time_left,
         }
     }
 
     fn update(self) -> Self {
         let Self {
-            mut time,
             mut score,
-            mut tick_rate,
             mut snake,
             mut foods,
             mut touches_cache,
             mut double_food_time_left,
-            mut speed_change_time_left,
         } = self;
         for touch in touches() {
             match touch.phase {
@@ -169,104 +160,85 @@ impl Game {
         }
 
         let delta = get_frame_time();
-        time += delta;
 
         double_food_time_left -= delta;
         if double_food_time_left < 0.0 {
             double_food_time_left = 0.0;
         }
-        speed_change_time_left -= delta;
-        if speed_change_time_left < 0.0 {
-            speed_change_time_left = 0.0;
-            tick_rate = INIT_TICK_RATE;
+
+        snake.update(delta);
+
+        let mut to_remove = vec![];
+        for (food, food_time) in foods.iter_mut() {
+            *food_time -= delta;
+            if *food_time < 0.0 && food.typ != FoodType::Grow {
+                to_remove.push(*food);
+            }
         }
 
-        while time > tick_rate {
-            time -= tick_rate;
-            snake.update(tick_rate);
+        let mut num_new_foods = 0;
+        for food in foods.keys().copied() {
+            if !snake.eats(food.position) {
+                continue;
+            }
+            to_remove.push(food);
 
-            let mut to_remove = vec![];
-            for (food, food_time) in foods.iter_mut() {
-                *food_time -= tick_rate;
-                if *food_time < 0.0 && food.typ != FoodType::Grow {
-                    to_remove.push(*food);
-                }
+            score += food.typ.score();
+
+            match food.typ {
+                FoodType::Grow => {}
+                FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
+                FoodType::Cut => snake.cut(),
+                FoodType::Slow => snake.speed_up(),
+                FoodType::Fast => snake.slow_down(),
+                FoodType::Reverse => snake.reverse(),
+                FoodType::Invisible => snake.invisible(),
+                FoodType::Portal => snake.portal(),
             }
 
-            let mut num_new_foods = 0;
-            for food in foods.keys().copied() {
-                if !snake.eats(food.position) {
-                    continue;
-                }
-                to_remove.push(food);
-
-                score += food.typ.score();
-
-                match food.typ {
-                    FoodType::Grow => {}
-                    FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
-                    FoodType::Cut => snake.cut(),
-                    FoodType::Slow => {
-                        speed_change_time_left = SPEED_CHANGE_TIME;
-                        tick_rate /= 2.0;
-                    }
-                    FoodType::Fast => {
-                        speed_change_time_left = SPEED_CHANGE_TIME;
-                        tick_rate *= 2.0;
-                    }
-                    FoodType::Reverse => snake.reverse(),
-                    FoodType::Invisible => snake.invisible(),
-                    FoodType::Portal => snake.portal(),
-                }
-
-                snake.grow();
-                if snake.segments.len() >= NUM_ROWS * NUM_COLS {
-                    return Game::new();
-                }
-
-                num_new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
-            }
-            for food in to_remove {
-                foods.remove(&food);
-            }
-            for _ in 0..num_new_foods {
-                if foods.len() >= MAX_FOODS {
-                    break;
-                }
-                let Some(position) =
-                    snake.random_food_location(foods.keys().map(|food| food.position))
-                else {
-                    break;
-                };
-                let typ = rand::gen_range(FoodType::min_value(), FoodType::max_value());
-                foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
-            }
-            if foods.is_empty() {
-                let position = snake
-                    .random_food_location(foods.keys().map(|food| food.position))
-                    .unwrap();
-                let typ = FoodType::Grow;
-                foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
+            snake.grow();
+            if snake.segments.len() >= NUM_ROWS * NUM_COLS {
+                return Game::new();
             }
 
-            if !snake.can_portal() && snake.is_outside() {
-                return Self::new();
+            num_new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
+        }
+        for food in to_remove {
+            foods.remove(&food);
+        }
+        for _ in 0..num_new_foods {
+            if foods.len() >= MAX_FOODS {
+                break;
             }
+            let Some(position) = snake.random_food_location(foods.keys().map(|food| food.position))
+            else {
+                break;
+            };
+            let typ = rand::gen_range(FoodType::min_value(), FoodType::max_value());
+            foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
+        }
+        if foods.is_empty() {
+            let position = snake
+                .random_food_location(foods.keys().map(|food| food.position))
+                .unwrap();
+            let typ = FoodType::Grow;
+            foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
+        }
 
-            if !snake.is_invisible() && snake.eats_self() {
-                return Self::new();
-            }
+        if !snake.can_portal() && snake.is_outside() {
+            return Self::new();
+        }
+
+        if !snake.is_invisible() && snake.eats_self() {
+            return Self::new();
         }
 
         Self {
-            time,
             score,
-            tick_rate,
             snake,
             foods,
             touches_cache,
             double_food_time_left,
-            speed_change_time_left,
         }
     }
 
@@ -376,9 +348,12 @@ impl Snake {
         Self {
             segments,
             dir,
+            time: 0.0,
+            tick_rate: INIT_TICK_RATE,
             input_queue: vec![],
             portal_time_left: 0.0,
             invisible_time_left: 0.0,
+            speed_change_time_left: 0.0,
         }
     }
 
@@ -447,6 +422,16 @@ impl Snake {
         self.input_queue.clear();
     }
 
+    fn speed_up(&mut self) {
+        self.tick_rate /= 2.0;
+        self.speed_change_time_left = SPEED_CHANGE_TIME;
+    }
+
+    fn slow_down(&mut self) {
+        self.tick_rate += 0.1;
+        self.speed_change_time_left = SPEED_CHANGE_TIME;
+    }
+
     fn portal(&mut self) {
         self.portal_time_left = PORTAL_TIME;
     }
@@ -471,10 +456,7 @@ impl Snake {
     }
 
     fn update(&mut self, delta: f32) {
-        if !self.input_queue.is_empty() {
-            self.dir = self.input_queue.remove(0);
-        }
-
+        self.time += delta;
         self.portal_time_left -= delta;
         if self.portal_time_left < 0.0 {
             self.portal_time_left = 0.0;
@@ -484,18 +466,26 @@ impl Snake {
             self.invisible_time_left = 0.0;
         }
 
-        {
-            let len = self.segments.len();
-            self.segments.copy_within(0..len - 1, 1);
-        }
+        while self.time > self.tick_rate {
+            self.time -= self.tick_rate;
 
-        {
-            let dir = self.dir;
-            let can_portal = self.can_portal();
-            let head = self.head_mut();
-            *head += dir;
-            if can_portal {
-                *head = head.rem_euclid(ivec2(NUM_COLS as i32, NUM_ROWS as i32));
+            if !self.input_queue.is_empty() {
+                self.dir = self.input_queue.remove(0);
+            }
+
+            {
+                let len = self.segments.len();
+                self.segments.copy_within(0..len - 1, 1);
+            }
+
+            {
+                let dir = self.dir;
+                let can_portal = self.can_portal();
+                let head = self.head_mut();
+                *head += dir;
+                if can_portal {
+                    *head = head.rem_euclid(ivec2(NUM_COLS as i32, NUM_ROWS as i32));
+                }
             }
         }
     }
