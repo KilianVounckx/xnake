@@ -250,21 +250,22 @@ impl Game {
         }
         self.snake.draw(&grid);
 
-        let font_size = if grid.vmargin == 0.0 {
+        let score_font_size = if grid.vmargin == 0.0 {
             grid.hmargin / 5.0
         } else {
-            grid.vmargin
+            grid.vmargin / 3.0
         };
         draw_text(
             &format!("Score: {}", self.score),
             0.0,
-            font_size,
-            font_size,
+            score_font_size,
+            score_font_size,
             ORANGE,
         );
 
         {
-            let mut y = font_size;
+            let mut y = score_font_size;
+            let font_size = 20.0;
             if self.double_food_time_left > 0.0 {
                 y += font_size;
                 draw_text(
