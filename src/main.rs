@@ -30,6 +30,7 @@ async fn main() {
 #[derive(Debug)]
 struct Game {
     time: f32,
+    score: u32,
     snake: Snake,
     foods: HashMap<Food, f32>,
     touches_cache: HashMap<u64, (Vec2, bool)>,
@@ -44,6 +45,8 @@ struct Grid {
     right: f32,
     top: f32,
     bottom: f32,
+    hmargin: f32,
+    vmargin: f32,
 }
 
 #[derive(Debug)]
@@ -87,9 +90,11 @@ impl Game {
             0.0,
         ))
         .collect();
+        let score = 0;
 
         Self {
             time,
+            score,
             snake,
             foods,
             touches_cache,
@@ -100,6 +105,7 @@ impl Game {
     fn update(self) -> Self {
         let Self {
             mut time,
+            mut score,
             mut snake,
             mut foods,
             mut touches_cache,
@@ -177,6 +183,7 @@ impl Game {
                 }
                 to_remove.push(food);
 
+                score += food.typ.score();
                 snake.grow();
                 match food.typ {
                     FoodType::Grow => {}
@@ -216,6 +223,7 @@ impl Game {
 
         Self {
             time,
+            score,
             snake,
             foods,
             touches_cache,
@@ -232,9 +240,21 @@ impl Game {
         }
         self.snake.draw(&grid);
 
-        let font_size = 20.0;
-        let mut y = 0.0;
+        let font_size = if grid.vmargin == 0.0 {
+            grid.hmargin / 5.0
+        } else {
+            grid.vmargin
+        };
+        draw_text(
+            &format!("Score: {}", self.score),
+            0.0,
+            font_size,
+            font_size,
+            ORANGE,
+        );
+
         {
+            let mut y = font_size;
             if self.double_food_time_left > 0.0 {
                 y += font_size;
                 draw_text(
@@ -293,6 +313,8 @@ impl Grid {
             right,
             top,
             bottom,
+            hmargin,
+            vmargin,
         }
     }
 
@@ -460,6 +482,18 @@ impl Food {
         let y = grid.top + self.position.y as f32 * grid.h;
         draw_rectangle(x, y, grid.w, grid.h, color);
         draw_rectangle_lines(x, y, grid.w, grid.h, 4.0, border_color);
+    }
+}
+
+impl FoodType {
+    fn score(self) -> u32 {
+        match self {
+            FoodType::Grow => 100,
+            FoodType::DoubleFood => 200,
+            FoodType::Cut => 500,
+            FoodType::Invisible => 200,
+            FoodType::Portal => 200,
+        }
     }
 }
 
