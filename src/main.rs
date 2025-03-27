@@ -1,16 +1,21 @@
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    iter,
+};
 
 use macroquad::{input::TouchPhase, prelude::*};
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{Bounded, FromPrimitive, ToPrimitive};
-use rand::RandomRange;
+use rand::{ChooseRandom, RandomRange};
 
 const INPUT_QUEUE_CAP: usize = 3;
 const TICK_RATE: f32 = 0.2;
 const NUM_ROWS: usize = 20;
 const NUM_COLS: usize = 20;
+const MAX_FOODS: usize = 10;
 const PORTAL_TIME: f32 = 7.0;
 const INVISIBLE_TIME: f32 = 7.0;
+const DOUBLE_FOOD_TIME: f32 = 4.0;
 
 #[macroquad::main("Xnake")]
 async fn main() {
@@ -28,8 +33,9 @@ async fn main() {
 struct Game {
     time: f32,
     snake: Snake,
-    food: Food,
+    foods: HashSet<Food>,
     touches_cache: HashMap<u64, (Vec2, bool)>,
+    double_food_time_left: f32,
 }
 
 #[derive(Debug)]
@@ -51,7 +57,7 @@ struct Snake {
     invisible_time_left: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Food {
     typ: FoodType,
     position: IVec2,
@@ -63,6 +69,7 @@ struct Food {
 enum FoodType {
     #[default]
     Grow,
+    DoubleFood,
     Invisible,
     Portal,
 }
@@ -72,16 +79,19 @@ impl Game {
         let touches_cache = HashMap::new();
         let snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
         let time = 0.0;
-        let food = Food {
+        let double_food_time_left = 0.0;
+        let foods = iter::once(Food {
             typ: FoodType::Grow,
-            position: snake.random_food_location(),
-        };
+            position: snake.random_food_location(iter::empty()),
+        })
+        .collect();
 
         Self {
             time,
             snake,
-            food,
+            foods,
             touches_cache,
+            double_food_time_left,
         }
     }
 
@@ -89,8 +99,9 @@ impl Game {
         let Self {
             mut time,
             mut snake,
-            mut food,
+            mut foods,
             mut touches_cache,
+            mut double_food_time_left,
         } = self;
         for touch in touches() {
             match touch.phase {
@@ -139,19 +150,44 @@ impl Game {
 
         let delta = get_frame_time();
         time += delta;
+
+        double_food_time_left -= delta;
+        if double_food_time_left < 0.0 {
+            double_food_time_left = 0.0;
+        }
+
         while time > TICK_RATE {
             time -= TICK_RATE;
             snake.update();
 
-            if snake.eats(food.position) {
+            let mut to_remove = vec![];
+            let mut new_foods = 0;
+            for food in foods.iter().copied() {
+                if !snake.eats(food.position) {
+                    continue;
+                }
+                to_remove.push(food);
+
+                snake.grow();
                 match food.typ {
-                    FoodType::Grow => snake.grow(),
+                    FoodType::Grow => {}
+                    FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
                     FoodType::Invisible => snake.invisible(),
                     FoodType::Portal => snake.portal(),
                 }
-                let position = snake.random_food_location();
+
+                new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
+            }
+            for food in to_remove {
+                foods.remove(&food);
+            }
+            for _ in 0..new_foods {
+                if foods.len() >= MAX_FOODS {
+                    break;
+                }
+                let position = snake.random_food_location(foods.iter().map(|food| food.position));
                 let typ = rand::gen_range(FoodType::min_value(), FoodType::max_value());
-                food = Food { typ, position };
+                foods.insert(Food { typ, position });
             }
 
             if !snake.can_portal() && snake.is_outside() {
@@ -166,8 +202,9 @@ impl Game {
         Self {
             time,
             snake,
-            food,
+            foods,
             touches_cache,
+            double_food_time_left,
         }
     }
 
@@ -175,7 +212,9 @@ impl Game {
         clear_background(BLACK);
         let grid = Grid::calculate();
         grid.draw();
-        self.food.draw(&grid);
+        for food in &self.foods {
+            food.draw(&grid);
+        }
         self.snake.draw(&grid);
     }
 }
@@ -241,13 +280,15 @@ impl Snake {
         self.input_queue.last().copied().unwrap_or(self.dir)
     }
 
-    fn random_food_location(&self) -> IVec2 {
-        let mut free_positions = (0..NUM_COLS)
+    fn random_food_location<I>(&self, mut foods: I) -> IVec2
+    where
+        I: Iterator<Item = IVec2> + Clone,
+    {
+        let free_positions = (0..NUM_COLS)
             .flat_map(|x| (0..NUM_ROWS).map(move |y| ivec2(x as i32, y as i32)))
-            .filter(|v| !self.segments.contains(v));
-        let num_free_positions = free_positions.clone().count();
-        let index = rand::gen_range(0, num_free_positions);
-        free_positions.nth(index).unwrap()
+            .filter(|v| !self.segments.contains(v) && !foods.any(|pos| pos == *v))
+            .collect::<Vec<_>>();
+        *free_positions.choose().unwrap()
     }
 
     fn head(&self) -> IVec2 {
@@ -350,6 +391,7 @@ impl Food {
     fn draw(&self, grid: &Grid) {
         let (color, border_color) = match self.typ {
             FoodType::Grow => (RED, RED),
+            FoodType::DoubleFood => (RED, GREEN),
             FoodType::Invisible => (WHITE, LIGHTGRAY),
             FoodType::Portal => (DARKBLUE, GOLD),
         };
