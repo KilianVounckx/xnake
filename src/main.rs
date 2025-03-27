@@ -31,7 +31,7 @@ async fn main() {
 #[derive(Debug)]
 struct Game {
     score: u32,
-    snake: Snake,
+    snakes: Vec<Snake>,
     foods: HashMap<Food, f32>,
     touches_cache: HashMap<u64, (Vec2, bool)>,
     double_food_time_left: f32,
@@ -78,6 +78,7 @@ enum FoodType {
     Slow,
     Fast,
     Reverse,
+    Multiply,
     Invisible,
     Portal,
 }
@@ -85,12 +86,16 @@ enum FoodType {
 impl Game {
     fn new() -> Self {
         let touches_cache = HashMap::new();
-        let snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
+        let snakes = vec![Snake::new(
+            ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2),
+            IVec2::X,
+            3,
+        )];
         let double_food_time_left = 0.0;
         let foods = iter::once((
             Food {
                 typ: FoodType::Grow,
-                position: snake.random_food_location(iter::empty()).unwrap(),
+                position: random_food_location(snakes.iter(), iter::empty()).unwrap(),
             },
             0.0,
         ))
@@ -99,7 +104,7 @@ impl Game {
 
         Self {
             score,
-            snake,
+            snakes,
             foods,
             touches_cache,
             double_food_time_left,
@@ -109,11 +114,12 @@ impl Game {
     fn update(self) -> Self {
         let Self {
             mut score,
-            mut snake,
+            mut snakes,
             mut foods,
             mut touches_cache,
             mut double_food_time_left,
         } = self;
+        let mut inputs = Vec::new();
         for touch in touches() {
             match touch.phase {
                 TouchPhase::Started => {
@@ -136,7 +142,7 @@ impl Game {
                     } else {
                         ivec2(0, dir.y.signum() as i32)
                     };
-                    snake.queue_input(dir);
+                    inputs.push(dir);
                     touches_cache.remove(&touch.id);
                 }
                 TouchPhase::Cancelled => {
@@ -147,16 +153,21 @@ impl Game {
         }
 
         if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
-            snake.queue_input(IVec2::NEG_X);
+            inputs.push(IVec2::NEG_X);
         }
         if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
-            snake.queue_input(IVec2::X);
+            inputs.push(IVec2::X);
         }
         if is_key_pressed(KeyCode::W) || is_key_pressed(KeyCode::Up) {
-            snake.queue_input(IVec2::NEG_Y);
+            inputs.push(IVec2::NEG_Y);
         }
         if is_key_pressed(KeyCode::S) || is_key_pressed(KeyCode::Down) {
-            snake.queue_input(IVec2::Y);
+            inputs.push(IVec2::Y);
+        }
+        for input in inputs {
+            for snake in &mut snakes {
+                snake.queue_input(input);
+            }
         }
 
         let delta = get_frame_time();
@@ -166,7 +177,9 @@ impl Game {
             double_food_time_left = 0.0;
         }
 
-        snake.update(delta);
+        for snake in &mut snakes {
+            snake.update(delta);
+        }
 
         let mut to_remove = vec![];
         for (food, food_time) in foods.iter_mut() {
@@ -178,30 +191,33 @@ impl Game {
 
         let mut num_new_foods = 0;
         for food in foods.keys().copied() {
-            if !snake.eats(food.position) {
-                continue;
+            for snake in &mut snakes {
+                if !snake.eats(food.position) {
+                    continue;
+                }
+                to_remove.push(food);
+
+                score += food.typ.score();
+
+                match food.typ {
+                    FoodType::Grow => {}
+                    FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
+                    FoodType::Cut => snake.cut(),
+                    FoodType::Slow => snake.speed_up(),
+                    FoodType::Fast => snake.slow_down(),
+                    FoodType::Reverse => snake.reverse(),
+                    FoodType::Multiply => todo!(),
+                    FoodType::Invisible => snake.invisible(),
+                    FoodType::Portal => snake.portal(),
+                }
+
+                snake.grow();
+                if snake.segments.len() >= NUM_ROWS * NUM_COLS {
+                    return Game::new();
+                }
+
+                num_new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
             }
-            to_remove.push(food);
-
-            score += food.typ.score();
-
-            match food.typ {
-                FoodType::Grow => {}
-                FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
-                FoodType::Cut => snake.cut(),
-                FoodType::Slow => snake.speed_up(),
-                FoodType::Fast => snake.slow_down(),
-                FoodType::Reverse => snake.reverse(),
-                FoodType::Invisible => snake.invisible(),
-                FoodType::Portal => snake.portal(),
-            }
-
-            snake.grow();
-            if snake.segments.len() >= NUM_ROWS * NUM_COLS {
-                return Game::new();
-            }
-
-            num_new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
         }
         for food in to_remove {
             foods.remove(&food);
@@ -210,7 +226,8 @@ impl Game {
             if foods.len() >= MAX_FOODS {
                 break;
             }
-            let Some(position) = snake.random_food_location(foods.keys().map(|food| food.position))
+            let Some(position) =
+                random_food_location(snakes.iter(), foods.keys().map(|food| food.position))
             else {
                 break;
             };
@@ -218,24 +235,24 @@ impl Game {
             foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
         }
         if foods.is_empty() {
-            let position = snake
-                .random_food_location(foods.keys().map(|food| food.position))
-                .unwrap();
+            let position =
+                random_food_location(snakes.iter(), foods.keys().map(|food| food.position))
+                    .unwrap();
             let typ = FoodType::Grow;
             foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
         }
 
-        if !snake.can_portal() && snake.is_outside() {
-            return Self::new();
-        }
-
-        if !snake.is_invisible() && snake.eats_self() {
-            return Self::new();
+        for snake in &snakes {
+            if !snake.can_portal() && snake.is_outside()
+                || !snake.is_invisible() && snake.eats_self()
+            {
+                return Self::new();
+            }
         }
 
         Self {
             score,
-            snake,
+            snakes,
             foods,
             touches_cache,
             double_food_time_left,
@@ -249,7 +266,9 @@ impl Game {
         for food in self.foods.keys() {
             food.draw(&grid);
         }
-        self.snake.draw(&grid);
+        for snake in &self.snakes {
+            snake.draw(&grid);
+        }
 
         let score_font_size = if grid.vmargin == 0.0 {
             grid.hmargin / 5.0
@@ -277,20 +296,20 @@ impl Game {
                     ORANGE,
                 );
             }
-            if self.snake.portal_time_left > 0.0 {
+            if self.snakes[0].portal_time_left > 0.0 {
                 y += font_size;
                 draw_text(
-                    &format!("P: {:.0}", self.snake.portal_time_left),
+                    &format!("P: {:.0}", self.snakes[0].portal_time_left),
                     0.0,
                     y,
                     font_size,
                     ORANGE,
                 );
             }
-            if self.snake.invisible_time_left > 0.0 {
+            if self.snakes[0].invisible_time_left > 0.0 {
                 y += font_size;
                 draw_text(
-                    &format!("I: {:.0}", self.snake.invisible_time_left),
+                    &format!("I: {:.0}", self.snakes[0].invisible_time_left),
                     0.0,
                     y,
                     font_size,
@@ -365,17 +384,6 @@ impl Snake {
 
     fn last_input(&self) -> IVec2 {
         self.input_queue.last().copied().unwrap_or(self.dir)
-    }
-
-    fn random_food_location<I>(&self, mut foods: I) -> Option<IVec2>
-    where
-        I: Iterator<Item = IVec2> + Clone,
-    {
-        let free_positions = (0..NUM_COLS)
-            .flat_map(|x| (0..NUM_ROWS).map(move |y| ivec2(x as i32, y as i32)))
-            .filter(|v| !self.segments.contains(v) && !foods.any(|pos| pos == *v))
-            .collect::<Vec<_>>();
-        free_positions.choose().copied()
     }
 
     fn head(&self) -> IVec2 {
@@ -526,6 +534,7 @@ impl Food {
             FoodType::Slow => (GREEN, DARKGREEN),
             FoodType::Fast => (GOLD, WHITE),
             FoodType::Reverse => (ORANGE, BLUE),
+            FoodType::Multiply => (PURPLE, LIME),
             FoodType::Invisible => (WHITE, LIGHTGRAY),
             FoodType::Portal => (DARKBLUE, GOLD),
         };
@@ -545,10 +554,25 @@ impl FoodType {
             FoodType::Slow => 200,
             FoodType::Fast => 500,
             FoodType::Reverse => 500,
+            FoodType::Multiply => 300,
             FoodType::Invisible => 200,
             FoodType::Portal => 200,
         }
     }
+}
+
+fn random_food_location<'a, I1, I2>(snakes: I1, foods: I2) -> Option<IVec2>
+where
+    I1: Iterator<Item = &'a Snake>,
+    I2: Iterator<Item = IVec2>,
+{
+    let snake_positions = snakes.flat_map(|snake| snake.segments.iter()).copied();
+    let mut all_positions = snake_positions.chain(foods);
+    let free_positions = (0..NUM_COLS)
+        .flat_map(|x| (0..NUM_ROWS).map(move |y| ivec2(x as i32, y as i32)))
+        .filter(|v| !all_positions.any(|pos| pos == *v))
+        .collect::<Vec<_>>();
+    free_positions.choose().copied()
 }
 
 impl RandomRange for FoodType {
