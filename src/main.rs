@@ -77,6 +77,7 @@ enum FoodType {
     Cut,
     Slow,
     Fast,
+    Reverse,
     Invisible,
     Portal,
 }
@@ -200,10 +201,6 @@ impl Game {
                 to_remove.push(food);
 
                 score += food.typ.score();
-                snake.grow();
-                if snake.segments.len() >= NUM_ROWS * NUM_COLS {
-                    return Game::new();
-                }
 
                 match food.typ {
                     FoodType::Grow => {}
@@ -217,8 +214,14 @@ impl Game {
                         speed_change_time_left = SPEED_CHANGE_TIME;
                         tick_rate *= 2.0;
                     }
+                    FoodType::Reverse => snake.reverse(),
                     FoodType::Invisible => snake.invisible(),
                     FoodType::Portal => snake.portal(),
+                }
+
+                snake.grow();
+                if snake.segments.len() >= NUM_ROWS * NUM_COLS {
+                    return Game::new();
                 }
 
                 num_new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
@@ -431,6 +434,19 @@ impl Snake {
         self.segments.truncate(new_len);
     }
 
+    fn reverse(&mut self) {
+        let new_dir = if self.segments.len() >= 2 {
+            let last = self.segments[self.segments.len() - 1];
+            let almost_last = self.segments[self.segments.len() - 2];
+            last - almost_last
+        } else {
+            -self.dir
+        };
+        self.segments.reverse();
+        self.dir = new_dir;
+        self.input_queue.clear();
+    }
+
     fn portal(&mut self) {
         self.portal_time_left = PORTAL_TIME;
     }
@@ -514,6 +530,7 @@ impl Food {
             FoodType::Cut => (DARKGRAY, GRAY),
             FoodType::Slow => (GREEN, DARKGREEN),
             FoodType::Fast => (GOLD, WHITE),
+            FoodType::Reverse => (ORANGE, BLUE),
             FoodType::Invisible => (WHITE, LIGHTGRAY),
             FoodType::Portal => (DARKBLUE, GOLD),
         };
@@ -532,6 +549,7 @@ impl FoodType {
             FoodType::Cut => 500,
             FoodType::Slow => 200,
             FoodType::Fast => 500,
+            FoodType::Reverse => 500,
             FoodType::Invisible => 200,
             FoodType::Portal => 200,
         }
