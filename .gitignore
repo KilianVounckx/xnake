@@ -4,6 +4,7 @@
 !/.github
 !/.github/**/*
 
+!/LICENSE
 !/Cargo.toml
 !/Cargo.lock
 !/src/**/*.rs
