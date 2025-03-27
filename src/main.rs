@@ -229,6 +229,41 @@ impl Game {
             food.draw(&grid);
         }
         self.snake.draw(&grid);
+
+        let font_size = 20.0;
+        let mut y = 0.0;
+        {
+            if self.double_food_time_left > 0.0 {
+                y += font_size;
+                draw_text(
+                    &format!("D: {:.0}", self.double_food_time_left),
+                    0.0,
+                    y,
+                    font_size,
+                    ORANGE,
+                );
+            }
+            if self.snake.portal_time_left > 0.0 {
+                y += font_size;
+                draw_text(
+                    &format!("P: {:.0}", self.snake.portal_time_left),
+                    0.0,
+                    y,
+                    font_size,
+                    ORANGE,
+                );
+            }
+            if self.snake.invisible_time_left > 0.0 {
+                y += font_size;
+                draw_text(
+                    &format!("I: {:.0}", self.snake.invisible_time_left),
+                    0.0,
+                    y,
+                    font_size,
+                    ORANGE,
+                );
+            }
+        }
     }
 }
 
