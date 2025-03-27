@@ -181,21 +181,22 @@ impl Game {
             snake.update(delta);
         }
 
-        let mut to_remove = vec![];
+        let mut foods_to_remove = vec![];
         for (food, food_time) in foods.iter_mut() {
             *food_time -= delta;
             if *food_time < 0.0 && food.typ != FoodType::Grow {
-                to_remove.push(*food);
+                foods_to_remove.push(*food);
             }
         }
 
         let mut num_new_foods = 0;
+        let mut snakes_to_insert = Vec::new();
         for food in foods.keys().copied() {
             for snake in &mut snakes {
                 if !snake.eats(food.position) {
                     continue;
                 }
-                to_remove.push(food);
+                foods_to_remove.push(food);
 
                 score += food.typ.score();
 
@@ -206,20 +207,26 @@ impl Game {
                     FoodType::Slow => snake.speed_up(),
                     FoodType::Fast => snake.slow_down(),
                     FoodType::Reverse => snake.reverse(),
-                    FoodType::Multiply => todo!(),
+                    FoodType::Multiply => {
+                        let neighbors = snake.spawn_neighbors();
+                        for neighbor in neighbors {
+                            snakes_to_insert.push(neighbor);
+                        }
+                    }
                     FoodType::Invisible => snake.invisible(),
                     FoodType::Portal => snake.portal(),
                 }
 
                 snake.grow();
-                if snake.segments.len() >= NUM_ROWS * NUM_COLS {
-                    return Game::new();
-                }
 
                 num_new_foods += if double_food_time_left > 0.0 { 2 } else { 1 };
             }
         }
-        for food in to_remove {
+        for snake in snakes_to_insert {
+            snakes.push(snake);
+        }
+
+        for food in foods_to_remove {
             foods.remove(&food);
         }
         for _ in 0..num_new_foods {
@@ -235,19 +242,36 @@ impl Game {
             foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
         }
         if foods.is_empty() {
+            if snakes.len() == NUM_ROWS * NUM_COLS {
+                return Self::new();
+            }
+
             let position =
                 random_food_location(snakes.iter(), foods.keys().map(|food| food.position))
                     .unwrap();
             let typ = FoodType::Grow;
             foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
         }
-
-        for snake in &snakes {
-            if !snake.can_portal() && snake.is_outside()
-                || !snake.is_invisible() && snake.eats_self()
-            {
-                return Self::new();
+        let mut snakes_to_remove = Vec::new();
+        for (index, snake) in snakes.iter().enumerate() {
+            if !snake.can_portal() && snake.is_outside() {
+                snakes_to_remove.push(index);
+                continue;
             }
+            for other_snake in &snakes {
+                if !snake.is_invisible()
+                    && !other_snake.is_invisible()
+                    && snake.eats_other(other_snake)
+                {
+                    snakes_to_remove.push(index);
+                }
+            }
+        }
+        for index in snakes_to_remove {
+            snakes.swap_remove(index);
+        }
+        if snakes.is_empty() {
+            return Self::new();
         }
 
         Self {
@@ -402,8 +426,8 @@ impl Snake {
         self.head() == food
     }
 
-    fn eats_self(&self) -> bool {
-        self.tail().iter().any(|segment| self.eats(*segment))
+    fn eats_other(&self, other: &Self) -> bool {
+        other.tail().iter().any(|segment| self.eats(*segment))
     }
 
     fn grow(&mut self) {
@@ -428,6 +452,15 @@ impl Snake {
         self.segments.reverse();
         self.dir = new_dir;
         self.input_queue.clear();
+    }
+
+    fn spawn_neighbors(&self) -> [Self; 2] {
+        [IVec2::Y, IVec2::NEG_Y].map(|rot_dir| {
+            let offset_dir = self.dir.rotate(rot_dir);
+            let head =
+                (self.head() + offset_dir * 3).rem_euclid(ivec2(NUM_COLS as i32, NUM_ROWS as i32));
+            Self::new(head, self.dir, 3)
+        })
     }
 
     fn speed_up(&mut self) {
@@ -561,13 +594,21 @@ impl FoodType {
     }
 }
 
-fn random_food_location<'a, I1, I2>(snakes: I1, foods: I2) -> Option<IVec2>
+fn free_locations<'a, I1, I2>(snakes: I1, foods: I2) -> impl Iterator<Item = IVec2>
 where
     I1: Iterator<Item = &'a Snake>,
     I2: Iterator<Item = IVec2>,
 {
     let snake_positions = snakes.flat_map(|snake| snake.segments.iter()).copied();
-    let mut all_positions = snake_positions.chain(foods);
+    snake_positions.chain(foods)
+}
+
+fn random_food_location<'a, I1, I2>(snakes: I1, foods: I2) -> Option<IVec2>
+where
+    I1: Iterator<Item = &'a Snake>,
+    I2: Iterator<Item = IVec2>,
+{
+    let mut all_positions = free_locations(snakes, foods);
     let free_positions = (0..NUM_COLS)
         .flat_map(|x| (0..NUM_ROWS).map(move |y| ivec2(x as i32, y as i32)))
         .filter(|v| !all_positions.any(|pos| pos == *v))
