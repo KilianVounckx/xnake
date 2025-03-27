@@ -9,6 +9,8 @@ const INPUT_QUEUE_CAP: usize = 3;
 const TICK_RATE: f32 = 0.2;
 const NUM_ROWS: usize = 20;
 const NUM_COLS: usize = 20;
+const PORTAL_TIME: f32 = 7.0;
+const INVISIBLE_TIME: f32 = 7.0;
 
 #[macroquad::main("Xnake")]
 async fn main() {
@@ -46,6 +48,7 @@ struct Snake {
     dir: IVec2,
     input_queue: Vec<IVec2>,
     portal_time_left: f32,
+    invisible_time_left: f32,
 }
 
 #[derive(Debug)]
@@ -60,6 +63,7 @@ struct Food {
 enum FoodType {
     #[default]
     Grow,
+    Invisible,
     Portal,
 }
 
@@ -142,11 +146,11 @@ impl Game {
             if snake.eats(food.position) {
                 match food.typ {
                     FoodType::Grow => snake.grow(),
+                    FoodType::Invisible => snake.invisible(),
                     FoodType::Portal => snake.portal(),
                 }
                 let position = snake.random_food_location();
                 let typ = rand::gen_range(FoodType::min_value(), FoodType::max_value());
-                println!("{typ:?}");
                 food = Food { typ, position };
             }
 
@@ -154,7 +158,7 @@ impl Game {
                 return Self::new();
             }
 
-            if snake.eats_self() {
+            if !snake.is_invisible() && snake.eats_self() {
                 return Self::new();
             }
         }
@@ -223,6 +227,7 @@ impl Snake {
             dir,
             input_queue: vec![],
             portal_time_left: 0.0,
+            invisible_time_left: 0.0,
         }
     }
 
@@ -271,11 +276,19 @@ impl Snake {
     }
 
     fn portal(&mut self) {
-        self.portal_time_left = 7.0;
+        self.portal_time_left = PORTAL_TIME;
     }
 
     fn can_portal(&self) -> bool {
         self.portal_time_left > 0.0
+    }
+
+    fn invisible(&mut self) {
+        self.invisible_time_left = INVISIBLE_TIME;
+    }
+
+    fn is_invisible(&self) -> bool {
+        self.invisible_time_left > 0.0
     }
 
     fn is_outside(&self) -> bool {
@@ -337,6 +350,7 @@ impl Food {
     fn draw(&self, grid: &Grid) {
         let (color, border_color) = match self.typ {
             FoodType::Grow => (RED, RED),
+            FoodType::Invisible => (WHITE, LIGHTGRAY),
             FoodType::Portal => (DARKBLUE, GOLD),
         };
         let x = grid.left + self.position.x as f32 * grid.w;
