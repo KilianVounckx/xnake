@@ -15,7 +15,7 @@ haven't had the time to make proper assets). The red food is normal food. All
 other food has a temporary en will despawn if not eaten in time:
 
 | Inside | Border | Effect |
-----------------------------
+|--------|--------|--------|
 | red | green | eating food will spawn two more |
 | dark gray | gray | the snake's length is halved |
 | white | light gray | the snake can pass through itself |
