@@ -145,6 +145,10 @@ impl Game {
             return Self::new();
         }
 
+        if snake.eats_self() {
+            return Self::new();
+        }
+
         Self {
             time,
             snake,
@@ -238,8 +242,16 @@ impl Snake {
         &mut self.segments[0]
     }
 
+    fn tail(&self) -> &[IVec2] {
+        &self.segments[1..]
+    }
+
     fn eats(&self, food: IVec2) -> bool {
         self.head() == food
+    }
+
+    fn eats_self(&self) -> bool {
+        self.tail().iter().any(|segment| self.eats(*segment))
     }
 
     fn grow(&mut self) {
