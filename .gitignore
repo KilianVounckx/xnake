@@ -4,8 +4,11 @@
 !/.github
 !/.github/**/*
 
+!/README.md
 !/LICENSE
+
 !/Cargo.toml
 !/Cargo.lock
 !/src/**/*.rs
+
 !/index.html
