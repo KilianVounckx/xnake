@@ -9,17 +9,77 @@ const NUM_COLS: usize = 20;
 
 #[macroquad::main("Xnake")]
 async fn main() {
-    rand::srand(miniquad::date::now() as u64);
-
-    let mut touches_cache = HashMap::new();
-    let mut snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
-    let mut time = 0.0;
-    let mut food = Food {
-        typ: FoodType::Grow,
-        position: snake.random_food_location(),
-    };
-
+    let mut game = Game::new();
     loop {
+        game = game.update();
+        game.draw();
+        next_frame().await;
+    }
+}
+
+#[derive(Debug)]
+struct Game {
+    time: f32,
+    snake: Snake,
+    food: Food,
+    touches_cache: HashMap<u64, (Vec2, bool)>,
+}
+
+#[derive(Debug)]
+struct Grid {
+    w: f32,
+    h: f32,
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+}
+
+#[derive(Debug)]
+struct Snake {
+    segments: Vec<IVec2>,
+    dir: IVec2,
+    input_queue: Vec<IVec2>,
+}
+
+#[derive(Debug)]
+struct Food {
+    typ: FoodType,
+    position: IVec2,
+}
+
+#[derive(Debug)]
+enum FoodType {
+    Grow,
+}
+
+impl Game {
+    fn new() -> Self {
+        rand::srand(miniquad::date::now() as u64);
+
+        let touches_cache = HashMap::new();
+        let snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
+        let time = 0.0;
+        let food = Food {
+            typ: FoodType::Grow,
+            position: snake.random_food_location(),
+        };
+
+        Self {
+            time,
+            snake,
+            food,
+            touches_cache,
+        }
+    }
+
+    fn update(self) -> Self {
+        let Self {
+            mut time,
+            mut snake,
+            mut food,
+            mut touches_cache,
+        } = self;
         for touch in touches() {
             match touch.phase {
                 TouchPhase::Started => {
@@ -81,43 +141,21 @@ async fn main() {
             };
         }
 
-        clear_background(BLACK);
+        Self {
+            time,
+            snake,
+            food,
+            touches_cache,
+        }
+    }
 
+    fn draw(&self) {
+        clear_background(BLACK);
         let grid = Grid::calculate();
         grid.draw();
-        food.draw(&grid);
-        snake.draw(&grid);
-
-        next_frame().await;
+        self.food.draw(&grid);
+        self.snake.draw(&grid);
     }
-}
-
-#[derive(Debug)]
-struct Grid {
-    w: f32,
-    h: f32,
-    left: f32,
-    right: f32,
-    top: f32,
-    bottom: f32,
-}
-
-#[derive(Debug)]
-struct Snake {
-    segments: Vec<IVec2>,
-    dir: IVec2,
-    input_queue: Vec<IVec2>,
-}
-
-#[derive(Debug)]
-struct Food {
-    typ: FoodType,
-    position: IVec2,
-}
-
-#[derive(Debug)]
-enum FoodType {
-    Grow,
 }
 
 impl Grid {
