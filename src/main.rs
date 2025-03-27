@@ -9,6 +9,8 @@ const NUM_COLS: usize = 20;
 
 #[macroquad::main("Xnake")]
 async fn main() {
+    rand::srand(miniquad::date::now() as u64);
+
     let mut game = Game::new();
     loop {
         game = game.update();
@@ -55,8 +57,6 @@ enum FoodType {
 
 impl Game {
     fn new() -> Self {
-        rand::srand(miniquad::date::now() as u64);
-
         let touches_cache = HashMap::new();
         let snake = Snake::new(ivec2(NUM_COLS as i32 / 2, NUM_ROWS as i32 / 2), IVec2::X, 3);
         let time = 0.0;
@@ -139,6 +139,10 @@ impl Game {
                 typ: FoodType::Grow,
                 position: snake.random_food_location(),
             };
+        }
+
+        if snake.is_outside() {
+            return Self::new();
         }
 
         Self {
@@ -241,6 +245,13 @@ impl Snake {
     fn grow(&mut self) {
         let last = *self.segments.last().unwrap();
         self.segments.push(last);
+    }
+
+    fn is_outside(&self) -> bool {
+        self.head().x < 0
+            || self.head().x >= NUM_COLS as i32
+            || self.head().y < 0
+            || self.head().y >= NUM_ROWS as i32
     }
 
     fn update(&mut self) {
