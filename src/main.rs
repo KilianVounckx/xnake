@@ -85,7 +85,7 @@ impl Game {
         let foods = iter::once((
             Food {
                 typ: FoodType::Grow,
-                position: snake.random_food_location(iter::empty()),
+                position: snake.random_food_location(iter::empty()).unwrap(),
             },
             0.0,
         ))
@@ -185,6 +185,10 @@ impl Game {
 
                 score += food.typ.score();
                 snake.grow();
+                if snake.segments.len() >= NUM_ROWS * NUM_COLS {
+                    return Game::new();
+                }
+
                 match food.typ {
                     FoodType::Grow => {}
                     FoodType::DoubleFood => double_food_time_left = DOUBLE_FOOD_TIME,
@@ -202,12 +206,18 @@ impl Game {
                 if foods.len() >= MAX_FOODS {
                     break;
                 }
-                let position = snake.random_food_location(foods.keys().map(|food| food.position));
+                let Some(position) =
+                    snake.random_food_location(foods.keys().map(|food| food.position))
+                else {
+                    break;
+                };
                 let typ = rand::gen_range(FoodType::min_value(), FoodType::max_value());
                 foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
             }
             if foods.is_empty() {
-                let position = snake.random_food_location(foods.keys().map(|food| food.position));
+                let position = snake
+                    .random_food_location(foods.keys().map(|food| food.position))
+                    .unwrap();
                 let typ = FoodType::Grow;
                 foods.insert(Food { typ, position }, FOOD_DESPAWN_TIME);
             }
@@ -352,7 +362,7 @@ impl Snake {
         self.input_queue.last().copied().unwrap_or(self.dir)
     }
 
-    fn random_food_location<I>(&self, mut foods: I) -> IVec2
+    fn random_food_location<I>(&self, mut foods: I) -> Option<IVec2>
     where
         I: Iterator<Item = IVec2> + Clone,
     {
@@ -360,7 +370,7 @@ impl Snake {
             .flat_map(|x| (0..NUM_ROWS).map(move |y| ivec2(x as i32, y as i32)))
             .filter(|v| !self.segments.contains(v) && !foods.any(|pos| pos == *v))
             .collect::<Vec<_>>();
-        *free_positions.choose().unwrap()
+        free_positions.choose().copied()
     }
 
     fn head(&self) -> IVec2 {
