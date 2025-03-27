@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
 use macroquad::{input::TouchPhase, prelude::*};
+use num_derive::{FromPrimitive, ToPrimitive};
+use num_traits::{Bounded, FromPrimitive, ToPrimitive};
+use rand::RandomRange;
 
 const INPUT_QUEUE_CAP: usize = 3;
 const TICK_RATE: f32 = 0.2;
@@ -42,6 +45,7 @@ struct Snake {
     segments: Vec<IVec2>,
     dir: IVec2,
     input_queue: Vec<IVec2>,
+    portal_time_left: f32,
 }
 
 #[derive(Debug)]
@@ -50,9 +54,13 @@ struct Food {
     position: IVec2,
 }
 
-#[derive(Debug)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, FromPrimitive, ToPrimitive,
+)]
 enum FoodType {
+    #[default]
     Grow,
+    Portal,
 }
 
 impl Game {
@@ -125,28 +133,30 @@ impl Game {
             snake.queue_input(IVec2::Y);
         }
 
-        time += get_frame_time();
+        let delta = get_frame_time();
+        time += delta;
         while time > TICK_RATE {
             time -= TICK_RATE;
             snake.update();
-        }
 
-        if snake.eats(food.position) {
-            match food.typ {
-                FoodType::Grow => snake.grow(),
+            if snake.eats(food.position) {
+                match food.typ {
+                    FoodType::Grow => snake.grow(),
+                    FoodType::Portal => snake.portal(),
+                }
+                let position = snake.random_food_location();
+                let typ = rand::gen_range(FoodType::min_value(), FoodType::max_value());
+                println!("{typ:?}");
+                food = Food { typ, position };
             }
-            food = Food {
-                typ: FoodType::Grow,
-                position: snake.random_food_location(),
-            };
-        }
 
-        if snake.is_outside() {
-            return Self::new();
-        }
+            if !snake.can_portal() && snake.is_outside() {
+                return Self::new();
+            }
 
-        if snake.eats_self() {
-            return Self::new();
+            if snake.eats_self() {
+                return Self::new();
+            }
         }
 
         Self {
@@ -212,6 +222,7 @@ impl Snake {
             segments,
             dir,
             input_queue: vec![],
+            portal_time_left: 0.0,
         }
     }
 
@@ -259,6 +270,14 @@ impl Snake {
         self.segments.push(last);
     }
 
+    fn portal(&mut self) {
+        self.portal_time_left = 7.0;
+    }
+
+    fn can_portal(&self) -> bool {
+        self.portal_time_left > 0.0
+    }
+
     fn is_outside(&self) -> bool {
         self.head().x < 0
             || self.head().x >= NUM_COLS as i32
@@ -271,12 +290,25 @@ impl Snake {
             self.dir = self.input_queue.remove(0);
         }
 
+        self.portal_time_left -= TICK_RATE;
+        if self.portal_time_left < 0.0 {
+            self.portal_time_left = 0.0;
+        }
+
         {
             let len = self.segments.len();
             self.segments.copy_within(0..len - 1, 1);
         }
-        let dir = self.dir;
-        *self.head_mut() += dir;
+
+        {
+            let dir = self.dir;
+            let can_portal = self.can_portal();
+            let head = self.head_mut();
+            *head += dir;
+            if can_portal {
+                *head = head.rem_euclid(ivec2(NUM_COLS as i32, NUM_ROWS as i32));
+            }
+        }
     }
 
     fn draw(&self, grid: &Grid) {
@@ -305,10 +337,38 @@ impl Food {
     fn draw(&self, grid: &Grid) {
         let (color, border_color) = match self.typ {
             FoodType::Grow => (RED, RED),
+            FoodType::Portal => (DARKBLUE, GOLD),
         };
         let x = grid.left + self.position.x as f32 * grid.w;
         let y = grid.top + self.position.y as f32 * grid.h;
         draw_rectangle(x, y, grid.w, grid.h, color);
-        draw_rectangle_lines(x, y, grid.w, grid.h, 2.0, border_color);
+        draw_rectangle_lines(x, y, grid.w, grid.h, 4.0, border_color);
+    }
+}
+
+impl RandomRange for FoodType {
+    fn gen_range(low: Self, high: Self) -> Self {
+        FoodType::from_u8(u8::gen_range(
+            low.to_u8().unwrap(),
+            high.to_u8().unwrap() + 1,
+        ))
+        .unwrap()
+    }
+    fn gen_range_with_state(state: &rand::RandGenerator, low: Self, high: Self) -> Self {
+        FoodType::from_u8(u8::gen_range_with_state(
+            state,
+            low.to_u8().unwrap(),
+            high.to_u8().unwrap() + 1,
+        ))
+        .unwrap()
+    }
+}
+
+impl Bounded for FoodType {
+    fn min_value() -> Self {
+        Self::Grow
+    }
+    fn max_value() -> Self {
+        Self::Portal
     }
 }
